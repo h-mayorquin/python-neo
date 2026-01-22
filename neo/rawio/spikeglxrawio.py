@@ -141,7 +141,27 @@ class SpikeGLXRawIO(BaseRawWithBufferApiIO):
             seg_index, stream_name = info["seg_index"], info["stream_name"]
             key = (seg_index, stream_name)
             if key in self.signals_info_dict:
-                raise KeyError(f"key {key} is already in the signals_info_dict")
+                # Gather diagnostic information about the duplicate
+                existing_info = self.signals_info_dict[key]
+                existing_meta = existing_info["meta_file"]
+                duplicate_meta = info["meta_file"]
+
+                error_msg = (
+                    f"Duplicate SpikeGLX stream detected for segment {seg_index}, stream '{stream_name}'.\n\n"
+                    f"This usually happens when:\n"
+                    f"  - Multiple .meta/.bin file pairs map to the same recording segment and stream\n"
+                    f"  - Backup or renamed copies exist in the directory or subdirectories\n"
+                    f"  - Files have been manually renamed but retain the same metadata\n\n"
+                    f"Conflicting files:\n"
+                    f"  1. {existing_meta}\n"
+                    f"  2. {duplicate_meta}\n\n"
+                    f"Please ensure only one set of files exists for each segment/stream combination.\n"
+                    f"You may need to:\n"
+                    f"  - Remove duplicate or backup files\n"
+                    f"  - Move files from subdirectories if they shouldn't be included\n"
+                    f"  - Check if files were renamed and update their metadata accordingly"
+                )
+                raise ValueError(error_msg)
             self.signals_info_dict[key] = info
 
             buffer_id = stream_name
