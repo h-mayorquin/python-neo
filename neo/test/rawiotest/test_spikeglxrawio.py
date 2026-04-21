@@ -6,7 +6,7 @@ import unittest
 
 import pytest
 
-from neo.rawio.spikeglxrawio import SpikeGLXRawIO, _build_signals_info_dict
+from neo.rawio.spikeglxrawio import SpikeGLXRawIO, _build_signals_info_dict, _derive_stream_kind
 from neo.test.rawiotest.common_rawio_test import BaseTestRawIO
 import numpy as np
 
@@ -221,6 +221,34 @@ def test_build_signals_info_dict_collision_raises_value_error():
         _build_signals_info_dict([info_a, info_b])
 
     assert str(exc_info.value) == expected_message
+
+
+def test_derive_stream_kind_ap():
+    meta = {"snsApLfSy": "96,0,1", "fileName": "/x/run_g0_t0.imec0.ap.bin"}
+    assert _derive_stream_kind(meta, filename_stream_kind="ap") == "ap"
+
+
+def test_derive_stream_kind_lf():
+    meta = {"snsApLfSy": "0,96,1", "fileName": "/x/run_g0_t0.imec0.lf.bin"}
+    assert _derive_stream_kind(meta, filename_stream_kind="lf") == "lf"
+
+
+def test_derive_stream_kind_filename_fallback_when_snsApLfSy_absent():
+    # No snsApLfSy (e.g. nidq, obx, or pre-split files). Fallback to filename.
+    meta = {"fileName": "/x/run.nidq.bin"}
+    assert _derive_stream_kind(meta, filename_stream_kind="") == ""
+    assert _derive_stream_kind(meta, filename_stream_kind="ap") == "ap"
+
+
+def test_derive_stream_kind_warns_on_disagreement():
+    # IBL-style corruption: LF meta with fileName pointing at the AP binary.
+    meta = {"snsApLfSy": "0,96,1", "fileName": "/data/run_g0_t0.imec0.ap.bin"}
+
+    with pytest.warns(UserWarning, match="snsApLfSy"):
+        result = _derive_stream_kind(meta, filename_stream_kind="ap")
+
+    # The semantic value wins.
+    assert result == "lf"
 
 
 if __name__ == "__main__":

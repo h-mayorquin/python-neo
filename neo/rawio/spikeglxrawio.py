@@ -648,6 +648,44 @@ def read_meta_file(meta_file):
     return meta
 
 
+def _derive_stream_kind(meta, filename_stream_kind):
+    """
+    Pick the canonical ``stream_kind`` for an imec stream ("ap" or "lf").
+
+    Prefers ``meta["snsApLfSy"]`` which encodes ``"{ap},{lf},{sy}"`` counts and
+    describes the saved channel composition regardless of what the filename says:
+    ``ap > 0, lf == 0`` means this is an AP stream; ``ap == 0, lf > 0`` means LF.
+    Falls back to the filename-derived value when ``snsApLfSy`` is absent or its
+    counts are ambiguous (both non-zero, both zero).
+
+    Emits a UserWarning when the filename and ``snsApLfSy`` disagree, so users of
+    tool-rewritten ``.meta`` files see the inconsistency at load time. The
+    ``snsApLfSy`` value wins because it describes the actual saved content rather
+    than a filename convention that may have been corrupted.
+    """
+    if "snsApLfSy" not in meta:
+        return filename_stream_kind
+    ap, lf, _sy = [int(s) for s in meta["snsApLfSy"].split(",")]
+    if ap > 0 and lf == 0:
+        semantic_stream_kind = "ap"
+    elif ap == 0 and lf > 0:
+        semantic_stream_kind = "lf"
+    else:
+        return filename_stream_kind
+    if filename_stream_kind and filename_stream_kind != semantic_stream_kind:
+        warn(
+            f"SpikeGLX metadata inconsistency in {meta.get('fileName', '<unknown file>')}: "
+            f"fileName implies stream_kind='{filename_stream_kind}' but "
+            f"snsApLfSy='{meta['snsApLfSy']}' implies '{semantic_stream_kind}'. "
+            f"Using '{semantic_stream_kind}' because it describes the actual saved "
+            f"channel composition. This usually means a third-party tool rewrote "
+            f"the .meta file.",
+            UserWarning,
+            stacklevel=2,
+        )
+    return semantic_stream_kind
+
+
 def extract_stream_info(meta_file, meta):
     """Extract info from the meta dict"""
 
@@ -672,7 +710,7 @@ def extract_stream_info(meta_file, meta):
 
     if "imec" in fname.split(".")[-2]:
         device = fname.split(".")[-2]
-        stream_kind = fname.split(".")[-1]
+        stream_kind = _derive_stream_kind(meta, filename_stream_kind=fname.split(".")[-1])
         units = "uV"
         # please note the 1e6 in gain for this uV
 
